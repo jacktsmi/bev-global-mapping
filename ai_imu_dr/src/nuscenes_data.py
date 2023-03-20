@@ -100,6 +100,8 @@ class NuScenesData(Dataset):
         data_dict['u'] = torch.from_numpy(np.array(data_dict['u'])).float()
         
         self.data.append(data_dict)
+        self.dump(data_dict,imu_measurement_file)
+        self.divide_datasets()
 
     def divide_datasets(self):
         for dataset in self.datasets:
