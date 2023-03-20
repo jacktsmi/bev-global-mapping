@@ -8,9 +8,9 @@ from utils_torch_filter import TORCHIEKF
 from utils import prepare_data
 import copy
 
-max_loss = 2e1
-max_grad_norm = 1e0
-min_lr = 1e-5
+max_loss = 4e1
+max_grad_norm = 1e1
+min_lr = 1e-4
 criterion = torch.nn.MSELoss(reduction="sum")
 lr_initprocesscov_net = 1e-4
 weight_decay_initprocesscov_net = 0e-8
@@ -34,7 +34,7 @@ def compute_delta_p(Rot, p):
     dp = p[1:] - p[:-1]  #  this must be ground truth
     distances[1:] = dp.norm(dim=1).cumsum(0).numpy()
 
-    seq_lengths = [100, 200, 300, 400, 500, 600, 700, 800]
+    seq_lengths = [20, 40, 60, 80] # [100, 200, 300, 400, 500, 600, 700, 800]
     k_max = int(Rot.shape[0] / step_size) - 1
 
     for k in range(0, k_max):
@@ -179,7 +179,7 @@ def train_loop(args, dataset, epoch, iekf, optimizer, seq_dim):
         optimizer.zero_grad()
         cprint("gradient norm: {:.5f}".format(g_norm))
     print('Train Epoch: {:2d} \tLoss: {:.5f}'.format(epoch, loss_train))
-    return loss_train
+    return loss_train.detach()
 
 
 def save_iekf(args, iekf):
@@ -194,6 +194,7 @@ def mini_batch_step(dataset, dataset_name, iekf, list_rpe, t, ang_gt, p_gt, v_gt
     Rot, v, p, b_omega, b_acc, Rot_c_i, t_c_i = iekf.run(t, u,measurements_covs,
                                                             v_gt, p_gt, t.shape[0],
                                                             ang_gt[0])
+
     delta_p, delta_p_gt = precompute_lost(Rot, p, list_rpe, N0)
     if delta_p is None:
         return -1
