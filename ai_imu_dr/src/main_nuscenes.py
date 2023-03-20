@@ -76,8 +76,8 @@ def test_filter(args, dataset):
     torch_iekf.load(args, dataset)
     iekf.set_learned_covariance(torch_iekf)
 
-    for i in range(0, len(dataset.datasets)):
-        dataset_name = dataset.dataset_name(i)
+    for i in range(0, len(args.test_sequences)):
+        dataset_name = args.test_sequences[i]
         print("Test filter on sequence: " + dataset_name)
         t, ang_gt, p_gt, v_gt, u = prepare_data(args, dataset, dataset_name, i,
                                                        to_numpy=True)
