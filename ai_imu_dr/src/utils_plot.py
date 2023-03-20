@@ -9,9 +9,9 @@ from utils_torch_filter import TORCHIEKF
 
 def results_filter(args, dataset):
 
-    for i in range(0, len(dataset.datasets)):
+    for i in range(0, len(args.test_sequences)):
         plt.close('all')
-        dataset_name = dataset.dataset_name(i)
+        dataset_name = args.test_sequences[i]
         file_name = os.path.join(dataset.path_results, dataset_name + "_filter.p")
         if not os.path.exists(file_name):
             print('No result for ' + dataset_name)
