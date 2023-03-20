@@ -7,7 +7,36 @@ import matplotlib.pyplot as plt
 import os
 from collections import OrderedDict
 import json
+from utils_numpy_filter import NUMPYIEKF as IEKF
 
+class NuScenesParameters(IEKF.Parameters):
+    # gravity vector
+    g = np.array([0, 0, -9.80655])
+
+    cov_omega = 2e-2
+    cov_acc = 1e-2
+    cov_b_omega = 1e-2
+    cov_b_acc = 1e-2
+    cov_Rot_c_i = 1e-2
+    cov_t_c_i = 1e-2
+    cov_Rot0 = 1e-2
+    cov_v0 = 1e-1
+    cov_b_omega0 = 1e-2
+    cov_b_acc0 = 1e-2
+    cov_Rot_c_i0 = 1e-2
+    cov_t_c_i0 = 1e-2
+    cov_lat = 1
+    cov_up = 10
+
+    def __init__(self, **kwargs):
+        super(NuScenesParameters, self).__init__(**kwargs)
+        self.set_param_attr()
+
+    def set_param_attr(self):
+        attr_list = [a for a in dir(NuScenesParameters) if
+                     not a.startswith('__') and not callable(getattr(NuScenesParameters, a))]
+        for attr in attr_list:
+            setattr(self, attr, getattr(NuScenesParameters, attr))
 
 class NuScenesData(Dataset):
     pickle_extension = ".p"
@@ -29,7 +58,8 @@ class NuScenesData(Dataset):
         self.datasets_validation = args.cross_validation_sequences
         """cross-validation datasets"""
         
-        self.scene = args.scene
+        self.n_train = args.n_train # Number training files
+        self.test_scene = args.test_scene
         
         self.data = [] # List of dicts
 
@@ -43,6 +73,11 @@ class NuScenesData(Dataset):
         """Validation dataset with index for starting/ending"""
         self.datasets_train_filter = OrderedDict()
         """Validation dataset with index for starting/ending"""
+        
+        self.sigma_gyro = 1.e-4
+        self.sigma_acc = 1.e-4
+        self.sigma_b_gyro = 1.e-5
+        self.sigma_b_acc = 1.e-4
 
         # factors for normalizing inputs
         self.normalize_factors = None
@@ -55,10 +90,13 @@ class NuScenesData(Dataset):
     def __len__(self):
         return len(self.datasets)
 
-    def get_datasets(self):
-        imu_measurement_file = self.path_data_save + f'/scene-{self.scene:0>4}_ms_imu.json'
-        gt_file = self.path_data_save + f'/scene-{self.scene:0>4}_pose.json'
-        self.datasets.append(f'scene-{self.scene:0>4}_ms_imu.json')
+    def helper(self, scene_num, is_train):
+        imu_measurement_file = self.path_data_save + f'/scene-{scene_num:0>4}_ms_imu.json'
+        gt_file = self.path_data_save + f'/scene-{scene_num:0>4}_pose.json'
+        self.datasets.append(f'scene-{scene_num:0>4}_ms_imu.json')
+        
+        if is_train:
+            self.datasets_train_filter[f'scene-{scene_num:0>4}_ms_imu.json'] = [0, 1800]
         
         with open(imu_measurement_file) as imu, open(gt_file) as gt:
             imu_list = json.load(imu)
@@ -83,11 +121,12 @@ class NuScenesData(Dataset):
             p_gt = gt_list[gt_nearest_idx]['pos']
             v_gt = gt_list[gt_nearest_idx]['vel']
             u = imu_list[i]['rotation_rate'] + imu_list[i]['linear_accel']
+            # u[3:] += np.array([0, 0, -9.80655])
             t = (gt_t + t) / 2
             if i == 0:
                 start_time = t
             
-            data_dict['t'].append((t - start_time) / 1e6)
+            data_dict['t'].append((gt_t - start_time) / 1e6)
             data_dict['ang_gt'].append(ang_gt)
             data_dict['p_gt'].append(p_gt)
             data_dict['v_gt'].append(v_gt)
@@ -100,6 +139,13 @@ class NuScenesData(Dataset):
         data_dict['u'] = torch.from_numpy(np.array(data_dict['u'])).float()
         
         self.data.append(data_dict)
+        self.dump(data_dict,imu_measurement_file)
+
+    def get_datasets(self):
+        self.helper(self.test_scene, is_train=False)
+        for i_tr in range(self.n_train):
+            self.helper(i_tr+1, is_train=True)
+        self.divide_datasets()
 
     def divide_datasets(self):
         for dataset in self.datasets:
@@ -157,11 +203,12 @@ class NuScenesData(Dataset):
     def normalize(self, u):
         u_loc = self.normalize_factors["u_loc"]
         u_std = self.normalize_factors["u_std"]
+        # print(u_loc, u_std)
         u_normalized = (u - u_loc) / u_std
         return u_normalized
 
     def add_noise(self, u):
-        w = torch.randn_like(u[:, :6]) # noise
+        w = torch.randn_like(u[:, :6]) # noise
         w_b = torch.randn_like(u[0, :6])  # bias
         w[:, :3] *= self.sigma_gyro
         w[:, 3:6] *= self.sigma_acc
@@ -223,11 +270,15 @@ class DataArgs():
     path_results = "results"
     path_temp = "temp"
     
-    scene = 61
+    n_train = 20
+    test_scene = 211 # 501, 523 are good ones
+    
+    epochs = 10
+    seq_dim = 1000
 
     # training, cross-validation and test dataset
     cross_validation_sequences = []
-    test_sequences = []
+    test_sequences = [f'scene-{test_scene:0>4}_ms_imu.json']
     continue_training = False
 
     # choose what to do
@@ -236,6 +287,7 @@ class DataArgs():
     test_filter = 1
     results_filter = 1
     dataset_class = NuScenesData
+    parameter_class = NuScenesParameters
 
 def find_nearest(array, value):
     array = np.asarray(array)
