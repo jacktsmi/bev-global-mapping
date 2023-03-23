@@ -8,6 +8,7 @@ import os
 from collections import OrderedDict
 import json
 from utils_numpy_filter import NUMPYIEKF as IEKF
+from scipy.spatial.transform import Rotation
 
 class NuScenesParameters(IEKF.Parameters):
     # gravity vector
@@ -19,7 +20,7 @@ class NuScenesParameters(IEKF.Parameters):
     cov_b_acc = 1e-2
     cov_Rot_c_i = 1e-2
     cov_t_c_i = 1e-2
-    cov_Rot0 = 1e-2
+    cov_Rot0 = 1e-1
     cov_v0 = 1e-1
     cov_b_omega0 = 1e-2
     cov_b_acc0 = 1e-2
@@ -117,7 +118,10 @@ class NuScenesData(Dataset):
             t = imu_list[i]['utime']
             gt_nearest_idx = find_nearest(gt_times, t)
             gt_t = gt_list[gt_nearest_idx]['utime']
-            ang_gt = gt_list[gt_nearest_idx]['rotation_rate']
+            q = gt_list[gt_nearest_idx]['orientation']
+            r = Rotation.from_quat([q[1], q[2], q[3], q[0]])
+            roll, pitch, yaw = IEKF.to_rpy(r.as_matrix())
+            ang_gt = [roll, pitch, yaw]
             p_gt = gt_list[gt_nearest_idx]['pos']
             v_gt = gt_list[gt_nearest_idx]['vel']
             u = imu_list[i]['rotation_rate'] + imu_list[i]['linear_accel']
@@ -271,7 +275,7 @@ class DataArgs():
     path_temp = "temp"
     
     n_train = 20
-    test_scene = 211 # 501, 523 are good ones
+    test_scene = 444 # 501, 523 are good ones
     
     epochs = 10
     seq_dim = 1000
