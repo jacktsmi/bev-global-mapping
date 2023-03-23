@@ -8,9 +8,9 @@ from utils_torch_filter import TORCHIEKF
 from utils import prepare_data
 import copy
 
-max_loss = 4e1
-max_grad_norm = 1e1
-min_lr = 1e-4
+max_loss = 2e4
+max_grad_norm = 1e2
+min_lr = 1e-5
 criterion = torch.nn.MSELoss(reduction="sum")
 lr_initprocesscov_net = 1e-4
 weight_decay_initprocesscov_net = 0e-8
@@ -26,15 +26,15 @@ def compute_delta_p(Rot, p):
     list_rpe = [[], [], []]  # [idx_0, idx_end, pose_delta_p]
 
     # sample at 1 Hz
-    Rot = Rot[::10]
-    p = p[::10]
+    #Rot = Rot[::10]
+    #p = p[::10]
 
     step_size = 10  # every second
     distances = np.zeros(p.shape[0])
     dp = p[1:] - p[:-1]  #  this must be ground truth
     distances[1:] = dp.norm(dim=1).cumsum(0).numpy()
 
-    seq_lengths = [20, 40, 60, 80] # [100, 200, 300, 400, 500, 600, 700, 800]
+    seq_lengths = [50, 100, 150, 200, 250, 300, 350, 400] # [20, 40, 60, 80, 100, 120, 140] # [100, 200, 300, 400, 500, 600, 700, 800]
     k_max = int(Rot.shape[0] / step_size) - 1
 
     for k in range(0, k_max):
@@ -168,7 +168,7 @@ def train_loop(args, dataset, epoch, iekf, optimizer, seq_dim):
 
     if loss_train == 0: 
         return 
-    loss_train.backward()  # loss_train.cuda().backward()  
+    loss_train.cuda().backward()  # loss_train.cuda().backward()  
     g_norm = torch.nn.utils.clip_grad_norm_(iekf.parameters(), max_grad_norm)
     if np.isnan(g_norm) or g_norm > 3*max_grad_norm:
         cprint("gradient norm: {:.5f}".format(g_norm), 'yellow')
@@ -251,15 +251,15 @@ def get_start_and_end(seq_dim, u):
 
 def precompute_lost(Rot, p, list_rpe, N0):
     N = p.shape[0]
-    Rot_10_Hz = Rot[::10]
-    p_10_Hz = p[::10]
-    idxs_0 = torch.Tensor(list_rpe[0]).clone().long() - int(N0 / 10)
-    idxs_end = torch.Tensor(list_rpe[1]).clone().long() - int(N0 / 10)
+    Rot_10_Hz = Rot#[::10]
+    p_10_Hz = p#[::10]
+    idxs_0 = torch.Tensor(list_rpe[0]).clone().long() - int(N0)
+    idxs_end = torch.Tensor(list_rpe[1]).clone().long() - int(N0)
     delta_p_gt = list_rpe[2]
     idxs = torch.Tensor(idxs_0.shape[0]).byte()
     idxs[:] = 1
     idxs[idxs_0 < 0] = 0
-    idxs[idxs_end >= int(N / 10)] = 0
+    idxs[idxs_end >= int(N)] = 0
     delta_p_gt = delta_p_gt[idxs]
     idxs_end_bis = idxs_end[idxs]
     idxs_0_bis = idxs_0[idxs]

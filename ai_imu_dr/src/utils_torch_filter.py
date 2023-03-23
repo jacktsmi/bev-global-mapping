@@ -369,6 +369,7 @@ class TORCHIEKF(torch.nn.Module, NUMPYIEKF):
             sec_pitch = 1. / pitch.cos()
             yaw = torch.atan2(Rot[1, 0] * sec_pitch, Rot[0, 0] * sec_pitch)
             roll = torch.atan2(Rot[2, 1] * sec_pitch, Rot[2, 2] * sec_pitch)
+        # print(roll, pitch, yaw)
         return roll, pitch, yaw
 
     @staticmethod

@@ -39,16 +39,16 @@ class KITTIParameters(IEKF.Parameters):
     g = np.array([0, 0, -9.80655])
 
     cov_omega = 2e-4
-    cov_acc = 1e-3
-    cov_b_omega = 1e-8
-    cov_b_acc = 1e-6
-    cov_Rot_c_i = 1e-8
-    cov_t_c_i = 1e-8
-    cov_Rot0 = 1e-6
+    cov_acc = 1e-2
+    cov_b_omega = 1e-11
+    cov_b_acc = 1e-3
+    cov_Rot_c_i = 1e-6
+    cov_t_c_i = 1e-4
+    cov_Rot0 = 1e-3
     cov_v0 = 1e-1
-    cov_b_omega0 = 1e-8
+    cov_b_omega0 = 1e-11
     cov_b_acc0 = 1e-3
-    cov_Rot_c_i0 = 1e-5
+    cov_Rot_c_i0 = 1e-4
     cov_t_c_i0 = 1e-2
     cov_lat = 1
     cov_up = 10

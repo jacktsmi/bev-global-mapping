@@ -8,22 +8,24 @@ import os
 from collections import OrderedDict
 import json
 from utils_numpy_filter import NUMPYIEKF as IEKF
+import math
+from scipy.spatial.transform import Rotation
 
 class NuScenesParameters(IEKF.Parameters):
     # gravity vector
     g = np.array([0, 0, -9.80655])
 
-    cov_omega = 2e-2
-    cov_acc = 1e-2
-    cov_b_omega = 1e-2
-    cov_b_acc = 1e-2
-    cov_Rot_c_i = 1e-2
-    cov_t_c_i = 1e-2
-    cov_Rot0 = 1e-2
+    cov_omega = 2e-4
+    cov_acc = 1e-3
+    cov_b_omega = 1e-8
+    cov_b_acc = 1e-6
+    cov_Rot_c_i = 1e-8
+    cov_t_c_i = 1e-8
+    cov_Rot0 = 1e-6
     cov_v0 = 1e-1
-    cov_b_omega0 = 1e-2
-    cov_b_acc0 = 1e-2
-    cov_Rot_c_i0 = 1e-2
+    cov_b_omega0 = 1e-8
+    cov_b_acc0 = 1e-3
+    cov_Rot_c_i0 = 1e-5
     cov_t_c_i0 = 1e-2
     cov_lat = 1
     cov_up = 10
@@ -58,6 +60,7 @@ class NuScenesData(Dataset):
         self.datasets_validation = args.cross_validation_sequences
         """cross-validation datasets"""
         
+        self.train_offset = args.train_offset
         self.n_train = args.n_train # Number training files
         self.test_scene = args.test_scene
         
@@ -91,12 +94,15 @@ class NuScenesData(Dataset):
         return len(self.datasets)
 
     def helper(self, scene_num, is_train):
-        imu_measurement_file = self.path_data_save + f'/scene-{scene_num:0>4}_ms_imu.json'
-        gt_file = self.path_data_save + f'/scene-{scene_num:0>4}_pose.json'
-        self.datasets.append(f'scene-{scene_num:0>4}_ms_imu.json')
+        imu_measurement_file = self.path_data_save + f'/Town{scene_num:0>2}_Light_imu.json'
+        if not os.path.isfile(imu_measurement_file):
+            return
+
+        gt_file = self.path_data_save + f'/Town{scene_num:0>2}_Light_pose.json'
+        self.datasets.append(f'Town{scene_num:0>2}_Light_imu.json')
         
         if is_train:
-            self.datasets_train_filter[f'scene-{scene_num:0>4}_ms_imu.json'] = [0, 1800]
+            self.datasets_train_filter[f'Town{scene_num:0>2}_Light_imu.json'] = [0, 1000]
         
         with open(imu_measurement_file) as imu, open(gt_file) as gt:
             imu_list = json.load(imu)
@@ -110,23 +116,34 @@ class NuScenesData(Dataset):
                      'v_gt': [],
                      'u': []}
         
-        gt_times = [gt_list[i]['utime'] for i in range(len(gt_list))]
+        # gt_times = [gt_list[i]['utime'] for i in range(len(gt_list))]
 
-        start_time = 0
-        for i in range(len(imu_list)):
-            t = imu_list[i]['utime']
-            gt_nearest_idx = find_nearest(gt_times, t)
-            gt_t = gt_list[gt_nearest_idx]['utime']
-            ang_gt = gt_list[gt_nearest_idx]['rotation_rate']
-            p_gt = gt_list[gt_nearest_idx]['pos']
-            v_gt = gt_list[gt_nearest_idx]['vel']
+        start_time = imu_list[0]['time']
+        for i in range(100, len(imu_list)):
+            # t = imu_list[i]['utime']
+            # gt_nearest_idx = find_nearest(gt_times, t)
+            t = imu_list[i]['time']
+            # q = gt_list[gt_nearest_idx]['orientation']
+            # q = [q[-1], q[0], q[1], q[2]]
+            # rot = Rotation.from_quat(q)
+            # roll, pitch, yaw = rot.as_euler('xyz', degrees=False)
+            # print(roll, pitch, yaw)
+            roll = gt_list[i]['roll_pitch_yaw'][0] #* np.pi / 180
+            pitch = gt_list[i]['roll_pitch_yaw'][1] #* np.pi / 180
+            yaw = gt_list[i]['roll_pitch_yaw'][2] #* np.pi / 180
+            # roll, pitch, yaw = np.array(gt_list[i]['roll_pitch_yaw']) * np.pi / 180 # IEKF.to_rpy(rot.as_matrix())
+            rot = Rotation.from_euler('xyz', [roll, pitch, yaw], degrees=True)
+            roll, pitch, yaw = IEKF.to_rpy(rot.as_matrix())
+            ang_gt = [roll, pitch, yaw]
+            p_gt = gt_list[i]['pos']
+            v_gt = gt_list[i]['vel']
             u = imu_list[i]['rotation_rate'] + imu_list[i]['linear_accel']
-            # u[3:] += np.array([0, 0, -9.80655])
-            t = (gt_t + t) / 2
-            if i == 0:
-                start_time = t
+            # print(i, np.linalg.norm(np.array(imu_list[i]['linear_accel'])))
+            # t = (gt_t + t) / 2
+            # if i == 0:
+            #     start_time = t
             
-            data_dict['t'].append((gt_t - start_time) / 1e6)
+            data_dict['t'].append(t - start_time)
             data_dict['ang_gt'].append(ang_gt)
             data_dict['p_gt'].append(p_gt)
             data_dict['v_gt'].append(v_gt)
@@ -143,7 +160,7 @@ class NuScenesData(Dataset):
 
     def get_datasets(self):
         self.helper(self.test_scene, is_train=False)
-        for i_tr in range(self.n_train):
+        for i_tr in range(self.train_offset, self.n_train + self.train_offset):
             self.helper(i_tr+1, is_train=True)
         self.divide_datasets()
 
@@ -266,19 +283,20 @@ class NuScenesData(Dataset):
         return Rot, v, p , b_omega, b_acc, Rot_c_i, t_c_i, measurements_covs
 
 class DataArgs():
-    path_data_save = "can_bus"
+    path_data_save = "carla"
     path_results = "results"
     path_temp = "temp"
     
-    n_train = 20
-    test_scene = 211 # 501, 523 are good ones
+    train_offset = 0
+    n_train = 20 # Train on scenes train_offset - train_offset+n_train
+    test_scene = 501 # 501, 523 are good ones
     
-    epochs = 10
-    seq_dim = 1000
+    epochs = 5
+    seq_dim = None
 
     # training, cross-validation and test dataset
     cross_validation_sequences = []
-    test_sequences = [f'scene-{test_scene:0>4}_ms_imu.json']
+    test_sequences = [f'Town10_Light_imu.json']
     continue_training = False
 
     # choose what to do
