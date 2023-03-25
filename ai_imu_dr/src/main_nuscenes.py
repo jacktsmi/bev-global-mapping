@@ -100,6 +100,7 @@ def test_filter(args, dataset):
         dataset.dump(mondict, args.path_results, dataset_name + "_filter.p")
 
 if __name__ == '__main__':
+    torch.set_default_tensor_type(torch.cuda.DoubleTensor)
     args = DataArgs()
     dataset = NuScenesData(args)
     launch(DataArgs)

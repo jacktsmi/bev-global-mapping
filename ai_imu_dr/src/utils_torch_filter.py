@@ -93,6 +93,7 @@ class TORCHIEKF(torch.nn.Module, NUMPYIEKF):
         if parameter_class is not None:
             self.filter_parameters = parameter_class()
             self.set_param_attr()
+        self.double().to(device)
 
     def set_param_attr(self):
         # get a list of attribute only
@@ -418,9 +419,9 @@ class TORCHIEKF(torch.nn.Module, NUMPYIEKF):
         # be transposed, i.e. with strides (1, n) instead of (n, 1).
 
         # pytorch SVD seems to be inaccurate, so just move to numpy immediately
-        U, _, V = torch.svd(rot).to(device)
-        S = torch.eye(3).to(device)
-        S[2, 2] = torch.det(U).to(device) * torch.det(V).to(device)
+        U, _, V = torch.svd(rot)
+        S = torch.eye(3)
+        S[2, 2] = torch.det(U) * torch.det(V)
         return U.mm(S).mm(V.t())
 
     def forward_nets(self, u):
@@ -430,7 +431,7 @@ class TORCHIEKF(torch.nn.Module, NUMPYIEKF):
         return measurements_covs
 
     def normalize_u(self, u):
-        return (u.to(device)-self.u_loc)/self.u_std
+        return (u-self.u_loc)/self.u_std
 
     def get_normalize_u(self, dataset):
         self.u_loc = dataset.normalize_factors['u_loc'].to(device)

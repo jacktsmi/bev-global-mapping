@@ -168,7 +168,7 @@ def train_loop(args, dataset, epoch, iekf, optimizer, seq_dim):
         return
     loss_train.cuda().backward()
     g_norm = torch.nn.utils.clip_grad_norm_(iekf.parameters(), max_grad_norm)
-    if np.isnan(g_norm) or g_norm > 3 * max_grad_norm:
+    if np.isnan(g_norm.cpu()) or g_norm > 3 * max_grad_norm:
         cprint("gradient norm: {:.5f}".format(g_norm), 'yellow')
         optimizer.zero_grad()
 
@@ -195,7 +195,7 @@ def mini_batch_step(dataset, dataset_name, iekf, list_rpe, t, ang_gt, p_gt, v_gt
     delta_p, delta_p_gt = precompute_lost(Rot, p, list_rpe, N0)
     if delta_p is None:
         return -1
-    loss = criterion(delta_p.double().to(device), delta_p_gt.double().to(device))
+    loss = criterion(delta_p.double().to(device), delta_p_gt.double().to(device)).double().to(device)
     return loss
 
 
@@ -252,12 +252,12 @@ def precompute_lost(Rot, p, list_rpe, N0):
     p_10_Hz = p[::10]
     idxs_0 = torch.Tensor(list_rpe[0]).clone().long() - int(N0 / 10)
     idxs_end = torch.Tensor(list_rpe[1]).clone().long() - int(N0 / 10)
-    delta_p_gt = list_rpe[2]
+    delta_p_gt = list_rpe[2].to(device)
     idxs = torch.Tensor(idxs_0.shape[0]).byte()
     idxs[:] = 1
     idxs[idxs_0 < 0] = 0
     idxs[idxs_end >= int(N / 10)] = 0
-    delta_p_gt = delta_p_gt[idxs].to(device)
+    delta_p_gt = delta_p_gt[idxs]
     idxs_end_bis = idxs_end[idxs]
     idxs_0_bis = idxs_0[idxs]
     if len(idxs_0_bis) is 0:
