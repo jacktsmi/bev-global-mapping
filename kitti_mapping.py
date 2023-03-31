@@ -1,3 +1,4 @@
+# %%
 import sys
 sys.path.append('ai_imu_dr/src')
 
@@ -17,7 +18,9 @@ from collections import OrderedDict
 from ai_imu_dr.src.dataset import BaseDataset
 from ai_imu_dr.src.utils_torch_filter import TORCHIEKF
 from ai_imu_dr.src.utils_numpy_filter import NUMPYIEKF as IEKF
-from ai_imu_dr.src.utils import prepare_data
+from ai_imu_dr.src.utils import prepare_data, umeyama_alignment
+
+# %%
 
 # Download data from https://www.dropbox.com/s/ey41xsvfqca30vv/data.zip
 # Have it in top level, in folder called data
@@ -417,12 +420,54 @@ class KITTIArgs():
     dataset_class = KITTIDataset
     parameter_class = KITTIParameters
 
+# Snap a number to arbitrary grid size
+def round_to_grid(x, grid_size):
+    return round(x*(1/grid_size)) * grid_size
+
 class GlobalMap:
-    def __init__(self, test_scene=27):
+    # Map Semantic KITTI -> AI-IMU data
+    scene_map = {
+        '00': '2011_10_03_drive_0027_extract',
+        '01': '2011_10_03_drive_0042_extract',
+        '02': '2011_10_03_drive_0034_extract',
+        '03': '2011_09_26_drive_0067_extract',
+        '04': '2011_09_30_drive_0016_extract',
+        '05': '2011_09_30_drive_0018_extract',
+        '06': '2011_09_30_drive_0020_extract',
+        '07': '2011_09_30_drive_0027_extract',
+        '08': '2011_09_30_drive_0028_extract',
+        '09': '2011_09_30_drive_0033_extract',
+        '10': '2011_09_30_drive_0034_extract'
+    }
+    
+    # Frames which semantic KITTI has data for
+    # All are LIDAR frames, so IMU bounds will be imu_freq/lidar_freq times bigger
+    frame_bounds = {
+        '00': (0, 4540),
+        '01': (0, 1100),
+        '02': (0, 4660),
+        '03': (0, 800),
+        '04': (0, 270),
+        '05': (0, 2760),
+        '06': (0, 1100),
+        '07': (0, 1100),
+        '08': (1100, 5170),
+        '09': (0, 1590),
+        '10': (0, 1200)
+    }
+    
+    global_map = dict() # (x, y) in meters : alpha (length N_classes)
+    
+    imu_freq = 100 # Hz
+    lidar_freq = 10 # Hz
+    
+    def __init__(self, test_scene='08'):
         self.test_scene = test_scene
+        self.grid_size = 0.2
+        self.N_classes = 20
         self.filter_params = KITTIParameters()
         self.args = KITTIArgs()
-        self.args.test_sequences.append(f'2011_09_30_drive_{test_scene:0>4}_extract')
+        self.args.test_sequences.append(self.scene_map[test_scene])
         self.dataset = KITTIDataset(self.args)
         t, R, p, ang_gt, p_gt = self.estimate_trajectory(self.args, self.dataset)
         self.trajectory = {
@@ -432,6 +477,18 @@ class GlobalMap:
             'ang_gt': ang_gt,
             'p_gt': p_gt
         }
+        self.trim_data()
+        self.heading = self.compute_bev_heading()
+    
+    def trim_data(self):
+        (low_bound, upper_bound) = self.frame_bounds[self.test_scene]
+        m = self.imu_freq // self.lidar_freq # Multiple to use for bounds
+        self.trajectory['t'] = self.trajectory['t'][low_bound * m:upper_bound * m]
+        self.trajectory['R'] = self.trajectory['R'][low_bound * m:upper_bound * m, ...]
+        self.trajectory['p'] = self.trajectory['p'][low_bound * m:upper_bound * m, ...]
+        self.trajectory['ang_gt'] = self.trajectory['ang_gt'][low_bound * m:upper_bound * m, ...]
+        self.trajectory['p_gt'] = self.trajectory['p_gt'][low_bound * m:upper_bound * m, ...]
+        return
     
     def estimate_trajectory(self, args, dataset):
         iekf = IEKF()
@@ -463,3 +520,102 @@ class GlobalMap:
         t, ang_gt, p_gt, _, _ = dataset.get_data(dataset_name)
         
         return t, Rot, p, ang_gt, p_gt
+
+    def load_bev_labels(self, frame):
+        # Scene is hardcoded in right now for testing purposes
+        labels = np.fromfile(f'bev_gt/{frame:0>6}.bin', dtype=np.uint8).reshape(256, 256)
+        return labels
+
+    def compute_bev_heading(self):
+        R = self.trajectory['R']
+        e = np.array([1, 0, 0]) # Unit vector in x direction
+        rotated_e = np.einsum('kij,j->ki', R, e) # Should be (N_frames, 3)
+        
+        # Project onto xy plane and find angle
+        x, y = rotated_e[:, 0], rotated_e[:, 1]
+        theta = np.arctan2(y, x)
+        return theta # Radians
+    
+    def generate_global_map_parameters(self):
+        (low_bound, upper_bound) = self.frame_bounds[self.test_scene]
+        n_frames = upper_bound - low_bound
+        for i in range((n_frames+1)//20):
+            print(i)
+            labels = self.load_bev_labels(i)
+            N, M = labels.shape
+            car_ind = (0, M//2) # At top of image
+            imu_ind = i * (self.imu_freq // self.lidar_freq)
+            theta = self.heading[imu_ind]
+            cur_pos = self.trajectory['p'][imu_ind, :]
+            x, y = cur_pos[0], cur_pos[1]
+            for j in range(N):
+                for k in range(M):
+                    # du, dv in car frame
+                    dv = self.grid_size * (j - car_ind[0])
+                    du = self.grid_size * (k - car_ind[1])
+                    
+                    # dx, dy in global frame
+                    ctheta = np.pi/2 - theta
+                    dx = du * np.cos(ctheta) + dv * np.cos(theta)
+                    dy = du * np.sin(ctheta) + dv * np.sin(theta)
+                    
+                    globalx = x + dx
+                    globaly = y + dy
+                    
+                    gridx = round_to_grid(globalx, self.grid_size)
+                    gridy = round_to_grid(globaly, self.grid_size)
+                    
+                    grid_cell = (gridx, gridy)
+                    if grid_cell not in self.global_map:
+                        # Initialize map parameters
+                        cell_label = labels[j, k]
+                        self.global_map[grid_cell] = np.ones((self.N_classes)) * 1e-10
+                        self.global_map[grid_cell][cell_label] += 1
+                    else:
+                        # Update map parameters
+                        cell_label = labels[j, k]
+                        self.global_map[grid_cell][cell_label] += 1
+            
+        return
+
+# %%
+
+gm = GlobalMap()
+
+# %%
+gm.generate_global_map_parameters()
+
+# %%
+vals = np.zeros((len(gm.global_map.keys()), 3))
+for i, (cell, l) in enumerate(gm.global_map.items()):
+    print(i)
+    ll = np.argmax(l)
+    vals[i, 0] = cell[0]
+    vals[i, 1] = cell[1]
+    vals[i, 2] = ll
+
+print(vals.shape)
+
+# %%
+plt.scatter(vals[:, 0], vals[:, 1], s=0.01, c=vals[:, 2], cmap='jet')
+# %%
+p = gm.trajectory['p']
+R = gm.trajectory['R']
+t = gm.trajectory['t']
+ang_gt = gm.trajectory['ang_gt']
+p_gt = gm.trajectory['p_gt']
+
+plt.plot(p[:, 0], p[:, 1])
+for i in range(p.shape[0]):
+    if i % 200 == 0:
+        plt.arrow(p[i, 0], p[i, 1], np.cos(theta[i]), np.sin(theta[i]), width=3, fc='r', ec='r')
+plt.show()
+# %%
+plt.plot(theta)
+plt.show()
+# %%
+test = np.fromfile('bev_gt/004070.bin', dtype=np.uint8).reshape(256, 256)
+test[0, 256//2] = 10000
+test[1, 256//2] = 10000
+plt.imshow(test)
+# %%
