@@ -464,7 +464,7 @@ class GlobalMap:
     def __init__(self, test_scene='08'):
         self.test_scene = test_scene
         self.grid_size = 0.2
-        self.N_classes = 20
+        self.N_classes = 15
         self.filter_params = KITTIParameters()
         self.args = KITTIArgs()
         self.args.test_sequences.append(self.scene_map[test_scene])
@@ -539,11 +539,11 @@ class GlobalMap:
     def generate_global_map_parameters(self):
         (low_bound, upper_bound) = self.frame_bounds[self.test_scene]
         n_frames = upper_bound - low_bound
-        for i in range((n_frames+1)//20):
+        for i in range((n_frames)):
             print(i)
             labels = self.load_bev_labels(i)
             N, M = labels.shape
-            car_ind = (0, M//2) # At top of image
+            car_ind = (N//2, M//2) # At top of image
             imu_ind = i * (self.imu_freq // self.lidar_freq)
             theta = self.heading[imu_ind]
             cur_pos = self.trajectory['p'][imu_ind, :]
@@ -551,16 +551,18 @@ class GlobalMap:
             for j in range(N):
                 for k in range(M):
                     # du, dv in car frame
-                    dv = self.grid_size * (j - car_ind[0])
-                    du = self.grid_size * (k - car_ind[1])
+                    dx = self.grid_size * (j - car_ind[0])
+                    dy = self.grid_size * (k - car_ind[1])
                     
                     # dx, dy in global frame
-                    ctheta = np.pi/2 - theta
-                    dx = du * np.cos(ctheta) + dv * np.cos(theta)
-                    dy = du * np.sin(ctheta) + dv * np.sin(theta)
+                    # ctheta = np.pi/2 - theta
+                    # dx = du * np.cos(ctheta) + dv * np.cos(theta)
+                    # dy = du * np.sin(ctheta) + dv * np.sin(theta)
+                    du = dx * np.cos(theta) - dy * np.sin(theta)
+                    dv = dx * np.sin(theta) + dy * np.cos(theta)
                     
-                    globalx = x + dx
-                    globaly = y + dy
+                    globalx = x + du
+                    globaly = y + dv
                     
                     gridx = round_to_grid(globalx, self.grid_size)
                     gridy = round_to_grid(globaly, self.grid_size)
@@ -586,18 +588,45 @@ gm = GlobalMap()
 gm.generate_global_map_parameters()
 
 # %%
-vals = np.zeros((len(gm.global_map.keys()), 3))
+vals = np.zeros((len(gm.global_map.keys()), 4))
+# vals[i, :] has format (x, y, label, variance)
+
 for i, (cell, l) in enumerate(gm.global_map.items()):
     print(i)
-    ll = np.argmax(l)
+    ll = np.argmax(l[1:]) # Same as taking one with highest mean
     vals[i, 0] = cell[0]
     vals[i, 1] = cell[1]
     vals[i, 2] = ll
+    alpha_sum = np.sum(l[1:])
+    A = np/max(ll[1:]) / alpha_sum
+    vals[i, 3] = (A * (1-A)) / (alpha_sum + 1) # only care about highest class
 
 print(vals.shape)
 
 # %%
-plt.scatter(vals[:, 0], vals[:, 1], s=0.01, c=vals[:, 2], cmap='jet')
+LABEL_COLORS = np.array([
+    (  255,   255,   255,), # unlabled
+    (245, 150, 100,), #car
+    (245, 230, 100,), #bike
+    ( 30,  30, 255,), #person
+    (255,   0, 255,), #road
+    (255, 150, 255,), #parking
+    ( 75,   0,  75,), #sidewalk
+    (  0, 200, 255,), #building
+    ( 50, 120, 255,), #fence
+    (  0, 175,   0,), #vegetation
+    ( 80, 240, 150,), #terrain
+    (150, 240, 255,), #pole
+    (90,  30, 150,), #traffic-sign
+    (255,  0,  0,), #moving-car
+    ( 0,  0, 255,), #moving-person
+]).astype(np.uint8)
+
+plt.scatter(vals[:, 0], vals[:, 1], s=0.1, c=LABEL_COLORS[vals[:, 2].astype(np.uint8) + 1]/255.0, cmap='jet')
+
+# %%
+plt.scatter(vals[:, 0], vals[:, 1], s=0.0001, c=vals[:, 3], cmap='jet')
+
 # %%
 p = gm.trajectory['p']
 R = gm.trajectory['R']
