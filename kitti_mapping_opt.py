@@ -500,13 +500,13 @@ class GlobalMap:
         dx = np.arange(start=-128, stop=128, step=1) * self.grid_size
         dy = np.arange(start=-128, stop=128, step=1) * self.grid_size
         
-        dxx, dyy = np.meshgrid(dx, dy)
+        dxx, dyy = np.meshgrid(dx, dy, indexing='ij')
         
         du = dxx * np.cos(heading) - dyy * np.sin(heading)
         dv = dxx * np.sin(heading) + dyy * np.cos(heading)
         
-        x_pos = x + dv
-        y_pos = y + du
+        x_pos = x + du
+        y_pos = y + dv
         
         x_ind = ((x_pos.flatten() - self.min_x) // self.grid_size).astype(int)
         y_ind = ((y_pos.flatten() - self.min_y) // self.grid_size).astype(int)
@@ -561,12 +561,12 @@ class GlobalMap:
 
     def compute_bev_heading(self):
         R = self.trajectory['R']
-        e = np.array([0, 1, 0]) # Unit vector in y direction
+        e = np.array([1, 0, 0]) # Unit vector in y direction
         rotated_e = np.einsum('kij,j->ki', R, e) # Should be (N_frames, 3)
         
         # Project onto xy plane and find angle
         x, y = rotated_e[:, 0], rotated_e[:, 1]
-        theta = np.arctan2(x, y)
+        theta = np.arctan2(y, x)
         return theta # Radians
     
     def generate_global_map_parameters(self):
