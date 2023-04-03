@@ -571,7 +571,6 @@ class GlobalMap:
     def compute_bev_heading(self):
         if self.gt:
             R = Rotation.from_euler('xyz', self.trajectory['ang_gt']).as_matrix()
-            print(R.shape)
         else:
             R = self.trajectory['R']
         e = np.array([1, 0, 0]) # Unit vector in y direction
