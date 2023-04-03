@@ -19,6 +19,7 @@ from ai_imu_dr.src.dataset import BaseDataset
 from ai_imu_dr.src.utils_torch_filter import TORCHIEKF
 from ai_imu_dr.src.utils_numpy_filter import NUMPYIEKF as IEKF
 from ai_imu_dr.src.utils import prepare_data, umeyama_alignment
+from scipy.spatial.transform import Rotation
 
 # %%
 
@@ -459,8 +460,9 @@ class GlobalMap:
     imu_freq = 100 # Hz
     lidar_freq = 10 # Hz
     
-    def __init__(self, test_scene='08'):
+    def __init__(self, test_scene='08', gt=False):
         self.test_scene = test_scene
+        self.gt = gt # Is it ground truth or not?
         self.grid_size = 0.2
         self.N_classes = 15
         self.filter_params = KITTIParameters()
@@ -556,11 +558,22 @@ class GlobalMap:
 
     def load_bev_labels(self, frame):
         # Scene is hardcoded in right now for testing purposes
-        labels = np.fromfile(f'bev_gt/{frame:0>6}.bin', dtype=np.uint8).reshape(256, 256)
+        file_name = ''
+        if self.gt:
+            file_name += 'MotionNet_Prediction_Test'
+        else:
+            file_name += 'MotionNet_Prediction'
+        
+        file_name += '/scene_' + self.test_scene + f'/bev_labels/{frame:0>6}.bin'
+        labels = np.fromfile(file_name, dtype=np.uint8).reshape(256, 256)
         return labels
 
     def compute_bev_heading(self):
-        R = self.trajectory['R']
+        if self.gt:
+            R = Rotation.from_euler('xyz', self.trajectory['ang_gt']).as_matrix()
+            print(R.shape)
+        else:
+            R = self.trajectory['R']
         e = np.array([1, 0, 0]) # Unit vector in y direction
         rotated_e = np.einsum('kij,j->ki', R, e) # Should be (N_frames, 3)
         
@@ -583,14 +596,13 @@ class GlobalMap:
             self.global_map[x_ind, y_ind, labels] += 1
         return
 
-# %%
+# %% Initialize global map object, involves computing predicted trajectory.
+gm = GlobalMap(gt=True)
 
-gm = GlobalMap()
-
-# %%
+# %% Create global map.
 gm.generate_global_map_parameters()
 
-# %%
+# %% Visualize global map.
 LABEL_COLORS = np.array([
     (  255,   255,   255,), # unlabled
     (245, 150, 100,), #car
@@ -613,9 +625,9 @@ labels = np.argmax(gm.global_map[..., 1:], axis=-1)+1
 xx, yy = np.meshgrid(range(gm.global_map.shape[0]), range(gm.global_map.shape[1]))
 colored_map = LABEL_COLORS[labels.astype(np.uint8)]
 plt.imshow(colored_map)
-plt.title('KITTI Scene 08 Ground Truth Mean')
+plt.title('KITTI Scene 08 Test Mean')
 
-# %%
+# %% Visualize trajectory and calculated BEV heading.
 p = gm.trajectory['p']
 R = gm.trajectory['R']
 t = gm.trajectory['t']
@@ -626,14 +638,5 @@ theta = gm.heading
 plt.plot(p[:, 0], p[:, 1])
 for i in range(p.shape[0]):
     if i % 300 == 0:
-        plt.arrow(p[i, 0], p[i, 1], np.sin(np.pi/2 + theta[i]), np.cos(np.pi/2 + theta[i]), width=3, fc='r', ec='r')
+        plt.arrow(p[i, 0], p[i, 1], np.cos(theta[i]), np.sin(theta[i]), width=3, fc='r', ec='r')
 plt.show()
-# %%
-plt.plot(theta)
-plt.show()
-# %%
-test = np.fromfile('bev_gt/004070.bin', dtype=np.uint8).reshape(256, 256)
-test[0, 256//2] = 10000
-test[1, 256//2] = 10000
-plt.imshow(test)
-# %%
