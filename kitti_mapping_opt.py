@@ -559,13 +559,14 @@ class GlobalMap:
     def load_bev_labels(self, frame):
         # Scene is hardcoded in right now for testing purposes
         file_name = ''
-        if self.gt:
+        if not self.gt:
             file_name += 'MotionNet_Prediction_Test'
+            file_name += '/scene_' + self.test_scene + f'/bev_labels/{frame:0>6}.bin'
+            labels = np.fromfile(file_name, dtype=np.uint8).reshape(256, 256)
         else:
             file_name += 'MotionNet_Prediction'
-        
-        file_name += '/scene_' + self.test_scene + f'/bev_labels/{frame:0>6}.bin'
-        labels = np.fromfile(file_name, dtype=np.uint8).reshape(256, 256)
+            file_name += '/scene_' + self.test_scene + f'/bev_labels/{frame:0>6}.bin'
+            labels = np.fromfile(file_name, dtype=np.int64).reshape(256, 256)
         return labels
 
     def compute_bev_heading(self):
@@ -596,7 +597,7 @@ class GlobalMap:
         return
 
 # %% Initialize global map object, involves computing predicted trajectory.
-gm = GlobalMap(gt=True)
+gm = GlobalMap(gt=False)
 
 # %% Create global map.
 gm.generate_global_map_parameters()
@@ -621,7 +622,7 @@ LABEL_COLORS = np.array([
 ]).astype(np.uint8)
 
 labels = np.argmax(gm.global_map[..., 1:], axis=-1)+1
-xx, yy = np.meshgrid(range(gm.global_map.shape[0]), range(gm.global_map.shape[1]))
+np.save('KITTI_Scene08_Test_Labels.npy', labels)
 colored_map = LABEL_COLORS[labels.astype(np.uint8)]
 plt.imshow(colored_map)
 plt.title('KITTI Scene 08 Test Mean')
