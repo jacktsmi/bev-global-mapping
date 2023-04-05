@@ -2,9 +2,12 @@
 
 # Setup
 1. Clone the repo
-2. Create `results` and `temp` folder under `ai_imu_dr`
-3. Download the CAN Bus Expansion dataset from [NuScenes](https://www.nuscenes.org/nuscenes?sceneId=scene-0061&frame=0&view=regular)
-4. Unzip the data under the `ai_imu_dr`, the folder name should be `can_bus`.
-5. Set the working directory to `ai_imu_dr`: `cd ai_imu_dr`
-6. The directory should looks like this: ![directory](readme.media/readme.directory.png)
-7. Run `python3 src/main_nuscenes.py`
+2. Download the AI-IMU dataset from [ai-imu's dropbox](https://www.dropbox.com/s/ey41xsvfqca30vv/data.zip) and store in root directory.
+3. Download the local BEV data from [Dropbox](https://www.dropbox.com/sh/56eouqw809psm58/AACC8PTWqbCWVDQskIL6y2iRa?dl=0)
+4. Store `MotionNet_Prediction` and `MotionNet_Prediction_Test` folders from the data in root directory.
+4. Create `temp` and `results` folder under root directory.
+5. Set the working directory to root.
+6. The root directory should look like this:  
+![directory](readme.media/readme_directory.PNG)
+7. Run `python3 kitti_mapping_opt.py`
+8. If you want to run `main_KITTI.py`, please call it under root directory, and run `python3 ai_imu_dr/src/main_kitti.py`
