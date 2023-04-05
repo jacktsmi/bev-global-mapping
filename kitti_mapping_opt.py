@@ -624,6 +624,7 @@ LABEL_COLORS = np.array([
 labels = np.argmax(gm.global_map[..., 1:], axis=-1)+1
 np.save('KITTI_Scene08_Test_Labels.npy', labels)
 colored_map = LABEL_COLORS[labels.astype(np.uint8)]
+plt.figure()
 plt.imshow(colored_map)
 plt.title('KITTI Scene 08 Test Mean')
 
@@ -635,7 +636,9 @@ ang_gt = gm.trajectory['ang_gt']
 p_gt = gm.trajectory['p_gt']
 theta = gm.heading
 
+plt.figure()
 plt.plot(p[:, 0], p[:, 1])
+plt.title('Trajectory and Computed BEV Heading')
 for i in range(p.shape[0]):
     if i % 300 == 0:
         plt.arrow(p[i, 0], p[i, 1], np.cos(theta[i]), np.sin(theta[i]), width=3, fc='r', ec='r')
