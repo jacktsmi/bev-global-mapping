@@ -460,9 +460,10 @@ class GlobalMap:
     imu_freq = 100 # Hz
     lidar_freq = 10 # Hz
     
-    def __init__(self, test_scene='08', gt=False):
+    def __init__(self, test_scene='08', gt=False, grid_shape=200):
         self.test_scene = test_scene
         self.gt = gt # Is it ground truth or not?
+        self.grid_shape = grid_shape # Local BEV maps are (grid_shape, grid_shape)
         self.grid_size = 0.2
         self.N_classes = 15
         self.filter_params = KITTIParameters()
@@ -483,11 +484,11 @@ class GlobalMap:
     
     def initialize_global_map(self):
         # Pad by 256 because local map grid cells will leak out otherwise
-        min_x = np.min(self.trajectory['p'][:, 0]) - (256 * self.grid_size)
-        max_x = np.max(self.trajectory['p'][:, 0]) + (256 * self.grid_size)
+        min_x = np.min(self.trajectory['p'][:, 0]) - (self.grid_shape * self.grid_size)
+        max_x = np.max(self.trajectory['p'][:, 0]) + (self.grid_shape * self.grid_size)
         
-        min_y = np.min(self.trajectory['p'][:, 1]) - (256 * self.grid_size)
-        max_y = np.max(self.trajectory['p'][:, 1]) + (256 * self.grid_size)
+        min_y = np.min(self.trajectory['p'][:, 1]) - (self.grid_shape * self.grid_size)
+        max_y = np.max(self.trajectory['p'][:, 1]) + (self.grid_shape * self.grid_size)
         
         # Pad by 100 just in case
         self.N_x = int((round_to_grid(max_x, self.grid_size) - round_to_grid(min_x, self.grid_size)) / self.grid_size) + 100
@@ -499,8 +500,8 @@ class GlobalMap:
     
     def find_global_indices(self, x, y, heading):
         # Assumes local map is 256 x 256
-        dx = np.arange(start=-128, stop=128, step=1) * self.grid_size
-        dy = np.arange(start=-128, stop=128, step=1) * self.grid_size
+        dx = np.arange(start=-self.grid_shape//2, stop=self.grid_shape//2, step=1) * self.grid_size
+        dy = np.arange(start=-self.grid_shape//2, stop=self.grid_shape//2, step=1) * self.grid_size
         
         dxx, dyy = np.meshgrid(dx, dy, indexing='ij')
         
@@ -557,16 +558,15 @@ class GlobalMap:
         return t, Rot, p, ang_gt, p_gt
 
     def load_bev_labels(self, frame):
-        # Scene is hardcoded in right now for testing purposes
         file_name = ''
         if not self.gt:
             file_name += 'MotionNet_Prediction_Test'
             file_name += '/scene_' + self.test_scene + f'/bev_labels/{frame:0>6}.bin'
-            labels = np.fromfile(file_name, dtype=np.uint8).reshape(256, 256)
+            labels = np.fromfile(file_name, dtype=np.uint8).reshape(self.grid_shape, self.grid_shape)
         else:
             file_name += 'MotionNet_Prediction'
             file_name += '/scene_' + self.test_scene + f'/bev_labels/{frame:0>6}.bin'
-            labels = np.fromfile(file_name, dtype=np.int64).reshape(256, 256)
+            labels = np.fromfile(file_name, dtype=np.uint8).reshape(self.grid_shape, self.grid_shape)
         return labels
 
     def compute_bev_heading(self):
@@ -596,13 +596,12 @@ class GlobalMap:
             self.global_map[x_ind, y_ind, labels] += 1
         return
 
-# %% Initialize global map object, involves computing predicted trajectory.
-gm = GlobalMap(gt=False)
+# %% Ground Truth
 
-# %% Create global map.
+# Initialize global map object, involves computing predicted trajectory.
+gm = GlobalMap(gt=True, grid_shape=200)
 gm.generate_global_map_parameters()
 
-# %% Visualize global map.
 LABEL_COLORS = np.array([
     (  255,   255,   255,), # unlabled
     (245, 150, 100,), #car
@@ -621,12 +620,36 @@ LABEL_COLORS = np.array([
     ( 0,  0, 255,), #moving-person
 ]).astype(np.uint8)
 
+# Visualize mean
 labels = np.argmax(gm.global_map[..., 1:], axis=-1)+1
-np.save('KITTI_Scene08_Test_Labels.npy', labels)
+np.save('KITTI_Scene08_GT_Labels.npy', labels)
 colored_map = LABEL_COLORS[labels.astype(np.uint8)]
 plt.figure()
 plt.imshow(colored_map)
-plt.title('KITTI Scene 08 Test Mean')
+plt.title(f'KITTI Scene {gm.test_scene} GT Mean')
+
+# %% Test
+
+# Initialize global map object, involves computing predicted trajectory.
+gm = GlobalMap(gt=False, grid_shape=256)
+gm.generate_global_map_parameters()
+
+# Visualize mean and variance
+labels = np.argmax(gm.global_map, axis=-1)
+np.save('KITTI_Scene08_Test_Labels.npy', labels)
+colored_map = LABEL_COLORS[labels.astype(np.uint8)]
+fig, (ax1, ax2) = plt.subplots(1, 2)
+fig.set_figheight(10)
+fig.set_figwidth(10)
+ax1.imshow(colored_map)
+ax1.set_title(f'KITTI Scene {gm.test_scene} Test Mean')
+
+alpha_sum = np.sum(gm.global_map, axis=-1)
+mean = gm.global_map / alpha_sum[..., np.newaxis]
+A = np.max(gm.global_map, axis=-1) / alpha_sum
+variance = (A * (1-A)) / (alpha_sum + 1)
+ax2.imshow(variance)
+ax2.set_title(f'KITTI Scene {gm.test_scene} Test Variance')
 
 # %% Visualize trajectory and calculated BEV heading.
 p = gm.trajectory['p']
