@@ -443,6 +443,8 @@ class GlobalMap:
     
     # Frames which semantic KITTI has data for
     # All are LIDAR frames, so IMU bounds will be imu_freq/lidar_freq times bigger
+    # These bounds are off (not synchronized with LIDAR), 08 is the only one
+    # that is kind of corrected.
     frame_bounds = {
         '00': (0, 4540),
         '01': (0, 1100),
@@ -452,7 +454,7 @@ class GlobalMap:
         '05': (0, 2760),
         '06': (0, 1100),
         '07': (0, 1100),
-        '08': (1100, 5170),
+        '08': (1148, 5218),
         '09': (0, 1590),
         '10': (0, 1200)
     }
@@ -620,7 +622,7 @@ LABEL_COLORS = np.array([
     ( 0,  0, 255,), #moving-person
 ]).astype(np.uint8)
 
-# Visualize mean
+# Visualize mean, ignore "unlabeled" label
 labels = np.argmax(gm.global_map[..., 1:], axis=-1)+1
 np.save('KITTI_Scene08_GT_Labels.npy', labels)
 colored_map = LABEL_COLORS[labels.astype(np.uint8)]
@@ -632,6 +634,8 @@ plt.title(f'KITTI Scene {gm.test_scene} GT Mean')
 
 # Initialize global map object, involves computing predicted trajectory.
 gm = GlobalMap(gt=False, grid_shape=256)
+
+# %%
 gm.generate_global_map_parameters()
 
 # Visualize mean and variance
