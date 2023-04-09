@@ -523,11 +523,14 @@ class GlobalMap:
     
     def initialize_global_map(self):
         # Pad array so indexing doesn't "leak"
-        min_x = np.min(self.trajectory['p'][:, 0]) - (self.grid_shape * self.grid_size)
-        max_x = np.max(self.trajectory['p'][:, 0]) + (self.grid_shape * self.grid_size)
+        p_x, p_y = self.trajectory['p'][:, 0], self.trajectory['p'][:, 1]
+        p_gt_x, p_gt_y = np.array(self.trajectory['p_gt'][:, 0]), np.array(self.trajectory['p_gt'][:, 1])
+
+        min_x = np.minimum(np.min(p_x), np.min(p_gt_x)) - (self.grid_shape * self.grid_size)
+        max_x = np.maximum(np.max(p_x), np.max(p_gt_x)) + (self.grid_shape * self.grid_size)
         
-        min_y = np.min(self.trajectory['p'][:, 1]) - (self.grid_shape * self.grid_size)
-        max_y = np.max(self.trajectory['p'][:, 1]) + (self.grid_shape * self.grid_size)
+        min_y = np.minimum(np.min(p_y), np.min(p_gt_y)) - (self.grid_shape * self.grid_size)
+        max_y = np.maximum(np.max(p_y), np.max(p_gt_y)) + (self.grid_shape * self.grid_size)
         
         # Pad by 100 just in case
         self.N_x = int((round_to_grid(max_x, self.grid_size) - round_to_grid(min_x, self.grid_size)) / self.grid_size) + 100
@@ -623,34 +626,34 @@ class GlobalMap:
     def generate_global_map_parameters(self):
         (low_bound, upper_bound) = self.frame_bounds[self.test_scene]
         n_frames = upper_bound - low_bound
-        with open('poses_aiimu.txt', 'w') as f:
-            for i in range((n_frames+1)):
-                labels = self.load_bev_labels(i).flatten()
-                
-                # Same explanation as line 484
-                if self.test_scene != '08':
-                    imu_ind = i * (self.imu_freq // self.lidar_freq)
-                else:
-                    imu_ind = int(self.closest_idx[i + low_bound])
+        for i in range((n_frames+1)):
+            labels = self.load_bev_labels(i).flatten()
+            
+            # Same explanation as line 484
+            if self.test_scene != '08':
+                imu_ind = i * (self.imu_freq // self.lidar_freq)
+                if i == n_frames:
+                    imu_ind -= 1
+            else:
+                imu_ind = int(self.closest_idx[i + low_bound])
 
-                pos = gm.trajectory['p'][imu_ind].reshape(3, 1)
-                rot = gm.trajectory['R'][imu_ind]
-                state = np.concatenate((rot, pos), axis=-1).reshape(-1)
-                line = ' '.join([str(state[i]) for i in range(len(state))])
-                f.write(line)
-                f.write('\n')
-                theta = self.heading[imu_ind]
+            theta = self.heading[imu_ind]
+            
+            if self.gt:
+                cur_pos = np.array(self.trajectory['p_gt'][imu_ind, :])
+            else: 
                 cur_pos = self.trajectory['p'][imu_ind, :]
-                x, y = cur_pos[0], cur_pos[1]
-                
-                x_ind, y_ind = self.find_global_indices(x, y, theta)
-                self.global_map[x_ind, y_ind, labels] += 1
+
+            x, y = cur_pos[0], cur_pos[1]
+            
+            x_ind, y_ind = self.find_global_indices(x, y, theta)
+            self.global_map[x_ind, y_ind, labels] += 1
         return
 
 # %% Ground Truth
 
 # Initialize global map object, involves computing predicted trajectory.
-gm = GlobalMap(gt=True)
+gm = GlobalMap(gt=True, test_scene='08')
 gm.generate_global_map_parameters()
 
 # Visualize mean
@@ -693,11 +696,11 @@ p_gt = gm.trajectory['p_gt']
 theta = gm.heading
 
 plt.figure()
-plt.plot(p[:, 0], p[:, 1])
+plt.plot(p_gt[:, 0], p_gt[:, 1])
 plt.title('Trajectory and Computed BEV Heading')
 for i in range(p.shape[0]):
     if i % 300 == 0:
-        plt.arrow(p[i, 0], p[i, 1], np.cos(theta[i]), np.sin(theta[i]), width=3, fc='r', ec='r')
+        plt.arrow(p_gt[i, 0], p_gt[i, 1], np.cos(theta[i]), np.sin(theta[i]), width=3, fc='r', ec='r')
 plt.show()
 
 # %%
