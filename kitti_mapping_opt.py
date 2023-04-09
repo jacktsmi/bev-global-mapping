@@ -23,6 +23,24 @@ from scipy.spatial.transform import Rotation
 
 # %%
 
+LABEL_COLORS = np.array([
+    (  255,   255,   255,), # unlabled
+    (245, 150, 100,), #car
+    (245, 230, 100,), #bike
+    ( 30,  30, 255,), #person
+    (255,   0, 255,), #road
+    (255, 150, 255,), #parking
+    ( 75,   0,  75,), #sidewalk
+    (  0, 200, 255,), #building
+    ( 50, 120, 255,), #fence
+    (  0, 175,   0,), #vegetation
+    ( 80, 240, 150,), #terrain
+    (150, 240, 255,), #pole
+    (90,  30, 150,), #traffic-sign
+    (255,  0,  0,), #moving-car
+    ( 0,  0, 255,), #moving-person
+]).astype(np.uint8)
+
 # Download data from https://www.dropbox.com/s/ey41xsvfqca30vv/data.zip
 # Have it in top level, in folder called data
 
@@ -454,7 +472,7 @@ class GlobalMap:
         '05': (0, 2760),
         '06': (0, 1100),
         '07': (0, 1100),
-        '08': (1148, 5218),
+        '08': (1100, 5170),
         '09': (0, 1590),
         '10': (0, 1200)
     }
@@ -480,12 +498,31 @@ class GlobalMap:
             'ang_gt': ang_gt,
             'p_gt': p_gt
         }
-        self.trim_data()
+        
+        # We have manually synced indices for 08 only currently.
+        # So if scene is not 08, then use trim_data() which has
+        # correct timespan but incorrect synchronization.
+        if self.test_scene != '08':
+            self.trim_data()
+        else:
+            self.get_closest_indices()
+
         self.heading = self.compute_bev_heading()
         self.initialize_global_map()
     
+    def get_closest_indices(self):
+        closest_idx_path = './closest_idx_08.txt'
+        closest_idx_timestamp_path = open(closest_idx_path, 'r')
+        closest_idx_timestamp = closest_idx_timestamp_path.readlines()
+
+        self.closest_idx = np.zeros((len(closest_idx_timestamp)))
+        c = 0
+        for line in closest_idx_timestamp:
+            self.closest_idx[c] = int(line)
+            c += 1
+    
     def initialize_global_map(self):
-        # Pad by 256 because local map grid cells will leak out otherwise
+        # Pad array so indexing doesn't "leak"
         min_x = np.min(self.trajectory['p'][:, 0]) - (self.grid_shape * self.grid_size)
         max_x = np.max(self.trajectory['p'][:, 0]) + (self.grid_shape * self.grid_size)
         
@@ -501,7 +538,6 @@ class GlobalMap:
         self.global_map = np.ones((self.N_x, self.N_y, self.N_classes))*1e-10
     
     def find_global_indices(self, x, y, heading):
-        # Assumes local map is 256 x 256
         dx = np.arange(start=-self.grid_shape//2, stop=self.grid_shape//2, step=1) * self.grid_size
         dy = np.arange(start=-self.grid_shape//2, stop=self.grid_shape//2, step=1) * self.grid_size
         
@@ -587,43 +623,38 @@ class GlobalMap:
     def generate_global_map_parameters(self):
         (low_bound, upper_bound) = self.frame_bounds[self.test_scene]
         n_frames = upper_bound - low_bound
-        for i in range((n_frames)):
-            labels = self.load_bev_labels(i).flatten()
-            imu_ind = i * (self.imu_freq // self.lidar_freq)
-            theta = self.heading[imu_ind]
-            cur_pos = self.trajectory['p'][imu_ind, :]
-            x, y = cur_pos[0], cur_pos[1]
-            
-            x_ind, y_ind = self.find_global_indices(x, y, theta)
-            self.global_map[x_ind, y_ind, labels] += 1
+        with open('poses_aiimu.txt', 'w') as f:
+            for i in range((n_frames+1)):
+                labels = self.load_bev_labels(i).flatten()
+                
+                # Same explanation as line 484
+                if self.test_scene != '08':
+                    imu_ind = i * (self.imu_freq // self.lidar_freq)
+                else:
+                    imu_ind = int(self.closest_idx[i + low_bound])
+
+                pos = gm.trajectory['p'][imu_ind].reshape(3, 1)
+                rot = gm.trajectory['R'][imu_ind]
+                state = np.concatenate((rot, pos), axis=-1).reshape(-1)
+                line = ' '.join([str(state[i]) for i in range(len(state))])
+                f.write(line)
+                f.write('\n')
+                theta = self.heading[imu_ind]
+                cur_pos = self.trajectory['p'][imu_ind, :]
+                x, y = cur_pos[0], cur_pos[1]
+                
+                x_ind, y_ind = self.find_global_indices(x, y, theta)
+                self.global_map[x_ind, y_ind, labels] += 1
         return
 
 # %% Ground Truth
 
 # Initialize global map object, involves computing predicted trajectory.
-gm = GlobalMap(gt=True, grid_shape=200)
+gm = GlobalMap(gt=True)
 gm.generate_global_map_parameters()
 
-LABEL_COLORS = np.array([
-    (  255,   255,   255,), # unlabled
-    (245, 150, 100,), #car
-    (245, 230, 100,), #bike
-    ( 30,  30, 255,), #person
-    (255,   0, 255,), #road
-    (255, 150, 255,), #parking
-    ( 75,   0,  75,), #sidewalk
-    (  0, 200, 255,), #building
-    ( 50, 120, 255,), #fence
-    (  0, 175,   0,), #vegetation
-    ( 80, 240, 150,), #terrain
-    (150, 240, 255,), #pole
-    (90,  30, 150,), #traffic-sign
-    (255,  0,  0,), #moving-car
-    ( 0,  0, 255,), #moving-person
-]).astype(np.uint8)
-
-# Visualize mean, ignore "unlabeled" label
-labels = np.argmax(gm.global_map[..., 1:], axis=-1)+1
+# Visualize mean
+labels = np.argmax(gm.global_map, axis=-1)
 np.save('KITTI_Scene08_GT_Labels.npy', labels)
 colored_map = LABEL_COLORS[labels.astype(np.uint8)]
 plt.figure()
@@ -633,9 +664,7 @@ plt.title(f'KITTI Scene {gm.test_scene} GT Mean')
 # %% Test
 
 # Initialize global map object, involves computing predicted trajectory.
-gm = GlobalMap(gt=False, grid_shape=256)
-
-# %%
+gm = GlobalMap(gt=False)
 gm.generate_global_map_parameters()
 
 # Visualize mean and variance
@@ -670,3 +699,5 @@ for i in range(p.shape[0]):
     if i % 300 == 0:
         plt.arrow(p[i, 0], p[i, 1], np.cos(theta[i]), np.sin(theta[i]), width=3, fc='r', ec='r')
 plt.show()
+
+# %%
