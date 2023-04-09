@@ -1,0 +1,20 @@
+seed : 42
+
+T: 9
+past_frames: 1
+binary_counts: True
+transform_pose: True
+voxelize_input: True
+remove_zero: True
+
+model_name: "MotionNet"
+num_workers: 8
+epoch_num: 50
+B: 2
+
+lr: 0.0016
+BETA1: 0.9
+BETA2: 0.999
+DECAY: 0.96
+
+model_path: "/home/jason/ROB530_MobileRobotics/motionnet/trained/Models/Weights/MotionNet/Epoch7.pt"
