@@ -526,6 +526,16 @@ class GlobalMap:
         p_x, p_y = self.trajectory['p'][:, 0], self.trajectory['p'][:, 1]
         p_gt_x, p_gt_y = np.array(self.trajectory['p_gt'][:, 0]), np.array(self.trajectory['p_gt'][:, 1])
 
+        # For certain scenes where ai-imu estimate is bad, use the
+        # commented lines below.
+        # min_x = np.minimum(np.min(p_x), np.min(p_gt_x)) - (self.grid_shape * self.grid_size)
+        # max_x = np.maximum(np.max(p_x), np.max(p_gt_x)) + (self.grid_shape * self.grid_size)
+        
+        # min_y = np.minimum(np.min(p_y), np.min(p_gt_y)) - (self.grid_shape * self.grid_size)
+        # max_y = np.maximum(np.max(p_y), np.max(p_gt_y)) + (self.grid_shape * self.grid_size)
+        
+        # For sake of model evaluation on 08, the lines below do the job
+        # since it makes output map always same size.
         min_x = np.min(p_gt_x) - (self.grid_shape * self.grid_size)
         max_x = np.max(p_gt_x) + (self.grid_shape * self.grid_size)
 
