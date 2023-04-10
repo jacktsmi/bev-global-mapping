@@ -19,3 +19,11 @@ conda env create -f environment.yml
 conda activate motionnet
 ```
 2. TODO
+
+# Evaluation
+We use evaluation matrics including IoU, precision, recall to evaluate the proformance.
+
+TODO:
+1. Run `python3 kitti_mapping_opt.py` to get the .npy files (in root directory).
+2. Move the generated .npy files to evaluation/ folder.
+3. Run 'python3 evaluate.py', change the path in evaluate.py if necessary.
