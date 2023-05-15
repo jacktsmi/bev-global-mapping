@@ -13,4 +13,11 @@
 8. If you want to run `main_KITTI.py`, please call it under root directory, and run `python3 ai_imu_dr/src/main_kitti.py`
 
 # Results
+## Real-Time Post Estimation and Mapping:
 ![directory](readme.media/globalmap_rviz_prediction.gif)
+
+## Result Map Prediction vs. Ground Truth
+![directory](readme.media/scene_08_mean_variance.PNG)![directory](readme.media/scene_08_gt_mean.PNG)
+
+## Slides
+[Link](readme.media/Presentation.pptx) to final presentation.
