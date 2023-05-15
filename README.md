@@ -12,18 +12,5 @@
 7. Run `python3 kitti_mapping_opt.py`
 8. If you want to run `main_KITTI.py`, please call it under root directory, and run `python3 ai_imu_dr/src/main_kitti.py`
 
-# Motion Net
-1. Create a conda environment with all the dependicies to run MotionNet by running the following line in 'motionnet' dir: 
-```
-conda env create -f environment.yml
-conda activate motionnet
-```
-2. TODO
-
-# Evaluation
-We use evaluation matrics including IoU, precision, recall to evaluate the proformance.
-
-TODO:
-1. Run `python3 kitti_mapping_opt.py` to get the .npy files (in root directory).
-2. Move the generated .npy files to evaluation/ folder.
-3. Run 'python3 evaluate.py', change the path in evaluate.py if necessary.
+# Results
+![directory](readme.media/globalmap_rviz_prediction.gif)
